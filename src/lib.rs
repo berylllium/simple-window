@@ -1,7 +1,8 @@
 mod utility;
 
-use std::{mem::MaybeUninit, ptr};
+use std::{mem::MaybeUninit, num::NonZeroIsize, ptr};
 
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
     Foundation::{HWND, HINSTANCE, LPARAM, LRESULT, RECT, WPARAM},
@@ -234,6 +235,17 @@ impl Window {
             }
 
         }
+    }
+
+    pub fn raw_window_handle(&self) -> RawWindowHandle {
+        let mut handle = Win32WindowHandle::new(NonZeroIsize::new(self.hwnd).unwrap());
+        handle.hinstance = NonZeroIsize::new(self.h_instance);
+
+        RawWindowHandle::Win32(handle)
+    }
+
+    pub fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::Windows(WindowsDisplayHandle::new())
     }
 
     fn wide_null(s: &str) -> Vec<u16> {
