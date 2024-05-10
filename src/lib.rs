@@ -3,7 +3,7 @@ mod utility;
 
 use std::{mem::MaybeUninit, num::NonZeroIsize, ptr};
 
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle, XcbDisplayHandle};
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
@@ -36,6 +36,35 @@ pub enum WindowInputEvent {
     MouseWheelMove(i16),
 }
 
+/// A cross-platform window wrapper.
+/// 
+/// # Examples
+/// ```
+/// use simple_window::{Window, WindowEvent, WindowInputEvent};
+/// 
+/// fn main() {
+///     let mut is_running = true;
+/// 
+///     let mut window = Window::new("Example Window", 200, 200, 400, 600);
+/// 
+///     while is_running {
+///         window.poll_messages(|event| {
+///             match event {
+///                 WindowEvent::Close => is_running = false,
+///                 WindowEvent::Resize(width, height) => println!("Window resized: {}, {}", width, height),
+///                 WindowEvent::Input(event) => match event {
+///                     WindowInputEvent::MouseMove(x, y) => println!("Mouse moved!: {}, {}", x, y),
+///                     WindowInputEvent::KeyDown(key) => println!("Key pressed: {}", key.as_str()),
+///                     WindowInputEvent::KeyUp(key) => println!("Key released: {}", key.as_str()),
+///                     WindowInputEvent::MouseWheelMove(dz) => println!("Mouse wheel {}", if dz > 0 { "up" } else { "down" }),
+///                     WindowInputEvent::MouseDown(button) => println!("Mouse {} down.", button.as_str()),
+///                     WindowInputEvent::MouseUp(button) => println!("Mouse {} up.", button.as_str()),
+///                 },
+///             }
+///         });
+///     }
+/// }
+/// ```
 pub struct Window {
     previous_size: (u32, u32),
 
@@ -77,15 +106,17 @@ extern "system" fn win32_process_message(hwnd: HWND, msg: u32, w_param: WPARAM, 
 }
 
 impl Window {
+    /// Creates a new window at position (`x`, `y`), and name `window_name`.
     pub fn new(
-        application_name: &str,
+        window_name: &str,
         x: i32, y: i32,
         width: i32, height: i32,
     ) -> Self {
         #[cfg(target_os = "windows")]
-        Self::new_win32(application_name, x, y, width, height)
+        Self::new_win32(window_name, x, y, width, height)
     }
 
+    /// Polls and parses system messages directed at the window and passes them on to the `event_closure` closure.
     pub fn poll_messages(&mut self, event_closure: impl FnMut(WindowEvent)) {
         #[cfg(target_os = "windows")]
         self.poll_messages_win32(event_closure);
@@ -111,12 +142,12 @@ impl Window {
     pub const WINDOW_CLASS_NAME: &'static str = "window_class";
 
     fn new_win32(
-        application_name: &str,
+        window_name: &str,
         x: i32, y: i32,
         width: i32, height: i32,
     ) -> Self {
         let window_class_name_utf16 = Self::wide_null(Self::WINDOW_CLASS_NAME);
-        let application_name_utf16 = Self::wide_null(application_name);
+        let application_name_utf16 = Self::wide_null(window_name);
 
         let h_instance = unsafe { GetModuleHandleA(ptr::null()) };
 

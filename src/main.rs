@@ -1,10 +1,9 @@
 use simple_window::{Window, WindowEvent, WindowInputEvent};
 
 fn main() {
-    let mut a = 10;
     let mut is_running = true;
 
-    let mut window = Window::new("Test Window", 200, 200, 600, 800);
+    let mut window = Window::new("Example Window", 200, 200, 400, 600);
 
     while is_running {
         window.poll_messages(|event| {
@@ -14,7 +13,6 @@ fn main() {
                 WindowEvent::Input(event) => match event {
                     WindowInputEvent::MouseMove(x, y) => {
                         println!("Mouse moved!: {}, {}", x, y);
-                        a += 1;
                     },
                     WindowInputEvent::KeyDown(key) => {
                         println!("Key pressed: {}", key.as_str());
@@ -35,6 +33,4 @@ fn main() {
             }
         });
     }
-
-    println!("Exit a: {}", a);
 }
