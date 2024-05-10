@@ -1,8 +1,10 @@
+//! A simple windowing library.
 mod utility;
 
 use std::{mem::MaybeUninit, num::NonZeroIsize, ptr};
 
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle, XcbDisplayHandle};
+
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
     Foundation::{HWND, HINSTANCE, LPARAM, LRESULT, RECT, WPARAM},
@@ -36,6 +38,7 @@ pub enum WindowInputEvent {
 
 pub struct Window {
     previous_size: (u32, u32),
+
     #[cfg(target_os = "windows")]
     h_instance: HINSTANCE,
     #[cfg(target_os = "windows")]
@@ -73,11 +76,41 @@ extern "system" fn win32_process_message(hwnd: HWND, msg: u32, w_param: WPARAM, 
     }
 }
 
+impl Window {
+    pub fn new(
+        application_name: &str,
+        x: i32, y: i32,
+        width: i32, height: i32,
+    ) -> Self {
+        #[cfg(target_os = "windows")]
+        Self::new_win32(application_name, x, y, width, height)
+    }
+
+    pub fn poll_messages(&mut self, event_closure: impl FnMut(WindowEvent)) {
+        #[cfg(target_os = "windows")]
+        self.poll_messages_win32(event_closure);
+    }
+
+    pub fn raw_window_handle(&self) -> RawWindowHandle {
+        #[cfg(target_os = "windows")]
+        self.raw_window_handle_win32()
+    }
+
+    pub fn raw_display_handle(&self) -> RawDisplayHandle {
+        #[cfg(target_os = "windows")]
+        self.raw_display_handle_windows()
+    }
+
+    fn wide_null(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+}
+
 #[cfg(target_os = "windows")]
 impl Window {
     pub const WINDOW_CLASS_NAME: &'static str = "window_class";
 
-    pub fn new(
+    fn new_win32(
         application_name: &str,
         x: i32, y: i32,
         width: i32, height: i32,
@@ -172,7 +205,7 @@ impl Window {
         }
     }
 
-    pub fn poll_messages(&mut self, mut event_closure: impl FnMut(WindowEvent)) {
+    fn poll_messages_win32(&mut self, mut event_closure: impl FnMut(WindowEvent)) {
         let mut message = MaybeUninit::<MSG>::uninit();
 
         while unsafe { PeekMessageW(message.as_mut_ptr(), self.hwnd, 0, 0, PM_REMOVE) } != 0 {
@@ -237,19 +270,15 @@ impl Window {
         }
     }
 
-    pub fn raw_window_handle(&self) -> RawWindowHandle {
+    fn raw_window_handle_win32(&self) -> RawWindowHandle {
         let mut handle = Win32WindowHandle::new(NonZeroIsize::new(self.hwnd).unwrap());
         handle.hinstance = NonZeroIsize::new(self.h_instance);
 
         RawWindowHandle::Win32(handle)
     }
 
-    pub fn raw_display_handle(&self) -> RawDisplayHandle {
+    fn raw_display_handle_windows(&self) -> RawDisplayHandle {
         RawDisplayHandle::Windows(WindowsDisplayHandle::new())
-    }
-
-    fn wide_null(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(Some(0)).collect()
     }
 }
 
