@@ -19,3 +19,5 @@ raw-window-handle = "=0.6.1"
 windows-sys = { version = "0.52.0", features = ["Win32_Foundation", "Win32_System", "Win32_System_LibraryLoader", "Win32_UI", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+x11 = "2.21.0"
+xcb = { version = "1.4.0", features = ["xlib_xcb"] }

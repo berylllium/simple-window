@@ -1,9 +1,21 @@
 //! A simple windowing library.
 mod utility;
 
-use std::{mem::MaybeUninit, num::NonZeroIsize, ptr};
+use std::{ffi::{c_uint, c_void}, num::NonZeroU32, os::raw::c_int, ptr::NonNull};
 
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+
+#[cfg(target_os = "linux")]
+use raw_window_handle::{XcbDisplayHandle, XcbWindowHandle};
+
+#[cfg(target_os = "linux")]
+use xcb::{x, Xid};
+
+#[cfg(target_os = "windows")]
+use raw_window_handle::{Win32WindowHandle, WindowsDisplayHandle};
+
+#[cfg(target_os = "windows")]
+use std::{mem::MaybeUninit, num::NonZeroIsize};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
@@ -15,7 +27,7 @@ use windows_sys::Win32::{
         RegisterClassW, WNDCLASSW, MSG,
         CS_DBLCLKS, IDC_ARROW, IDI_APPLICATION, MB_ICONEXCLAMATION, MB_OK, SW_SHOW, SW_SHOWNOACTIVATE, 
         WS_CAPTION, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME,
-        WM_DESTROY, PM_REMOVE, WM_CLOSE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+        WM_DESTROY, PM_REMOVE, WM_CLOSE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWjN, WM_KEYUP, WM_LBUTTONDOWN,
         WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
         WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER
     },
@@ -72,6 +84,15 @@ pub struct Window {
     h_instance: HINSTANCE,
     #[cfg(target_os = "windows")]
     hwnd: HWND,
+    
+    #[cfg(target_os = "linux")]
+    connection: xcb::Connection,
+    #[cfg(target_os = "linux")]
+    window: u32,
+    #[cfg(target_os = "linux")]
+    screen: c_int,
+    #[cfg(target_os = "linux")]
+    wm_del_window: x::Atom,
 }
 
 #[cfg(target_os = "windows")]
@@ -113,29 +134,345 @@ impl Window {
         width: i32, height: i32,
     ) -> Self {
         #[cfg(target_os = "windows")]
-        Self::new_win32(window_name, x, y, width, height)
+        { Self::new_win32(window_name, x, y, width, height) }
+
+        #[cfg(target_os = "linux")]
+        { Self::new_linux_x(window_name, x, y, width, height) }
     }
 
     /// Polls and parses system messages directed at the window and passes them on to the `event_closure` closure.
     pub fn poll_messages(&mut self, event_closure: impl FnMut(WindowEvent)) {
         #[cfg(target_os = "windows")]
-        self.poll_messages_win32(event_closure);
+        { self.poll_messages_win32(event_closure); }
+
+        #[cfg(target_os = "linux")]
+        { self.poll_messages_linux_x(event_closure); }
     }
 
     pub fn raw_window_handle(&self) -> RawWindowHandle {
         #[cfg(target_os = "windows")]
-        self.raw_window_handle_win32()
+        { self.raw_window_handle_win32() }
+
+        #[cfg(target_os = "linux")]
+        { self.raw_window_handle_linux_x() }
     }
 
     pub fn raw_display_handle(&self) -> RawDisplayHandle {
         #[cfg(target_os = "windows")]
-        self.raw_display_handle_windows()
-    }
+        { self.raw_display_handle_windows() }
 
-    fn wide_null(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(Some(0)).collect()
+        #[cfg(target_os = "linux")]
+        { self.raw_display_handle_linux_x() }
     }
 }
+
+#[cfg(target_os = "linux")]
+impl Window {
+    fn new_linux_x(
+        window_name: &str,
+        x: i32, y: i32,
+        width: i32, height: i32,
+    ) -> Self {
+        let (conn, screen_num) = xcb::Connection::connect_with_xlib_display().unwrap();
+
+        let setup = conn.get_setup();
+        let screen = setup.roots().nth(screen_num as usize).unwrap();
+
+        let window: x::Window = conn.generate_id();
+
+        let cookie = conn.send_request_checked(&x::CreateWindow {
+            depth: x::COPY_FROM_PARENT as u8,
+            wid: window,
+            parent: screen.root(),
+            x: x.try_into().unwrap(),
+            y: y.try_into().unwrap(),
+            width: width.try_into().unwrap(),
+            height: height.try_into().unwrap(),
+            border_width: 0,
+            class: x::WindowClass::InputOutput,
+            visual: screen.root_visual(),
+            value_list: &[
+                x::Cw::BackPixel(screen.white_pixel()),
+                x::Cw::EventMask(x::EventMask::BUTTON_PRESS | x::EventMask::BUTTON_RELEASE | x::EventMask::KEY_PRESS
+                    | x::EventMask::KEY_RELEASE | x::EventMask::EXPOSURE | x::EventMask::POINTER_MOTION
+                    | x::EventMask::STRUCTURE_NOTIFY
+                ),
+            ],
+        });
+        conn.check_request(cookie).unwrap();
+
+        let cookie = conn.send_request_checked(&x::ChangeProperty {
+            mode: x::PropMode::Replace,
+            window,
+            property: x::ATOM_WM_NAME,
+            r#type: x::ATOM_STRING,
+            data: window_name.as_bytes(),
+        });
+        conn.check_request(cookie).unwrap();
+
+        conn.send_request(&x::MapWindow {
+            window,
+        });
+
+        // Get atoms.
+        let (wm_protocols, wm_del_window) = {
+            let cookies = (
+                conn.send_request(&x::InternAtom {
+                    only_if_exists: true,
+                    name: b"WM_PROTOCOLS",
+                }),
+                conn.send_request(&x::InternAtom {
+                    only_if_exists: true,
+                    name: b"WM_DELETE_WINDOW",
+                }),
+            );
+
+            (
+                conn.wait_for_reply(cookies.0).unwrap().atom(),
+                conn.wait_for_reply(cookies.1).unwrap().atom(),
+            )
+        };
+
+        conn.check_request(conn.send_request_checked(&x::ChangeProperty {
+            mode: x::PropMode::Replace,
+            window,
+            property: wm_protocols,
+            r#type: x::ATOM_ATOM,
+            data: &[wm_del_window],
+        })).unwrap();
+
+        conn.flush().unwrap();
+
+        Self {
+            previous_size: (0, 0),
+            connection: conn,
+            screen: screen_num,
+            window: window.resource_id(),
+            wm_del_window,
+        }
+    }
+
+    fn poll_messages_linux_x(&mut self, mut event_closure: impl FnMut(WindowEvent)) {
+        while let Some(event) = self.connection.poll_for_event().unwrap() {
+            if let xcb::Event::X(event) = event { match event {
+                    x::Event::KeyPress(event) => {
+                        let key = self.translate_key_code(event.detail());
+                        (event_closure)(WindowEvent::Input(WindowInputEvent::KeyDown(key)));
+                    },
+                    x::Event::KeyRelease(event) => {
+                        let key = self.translate_key_code(event.detail());
+                        (event_closure)(WindowEvent::Input(WindowInputEvent::KeyUp(key)));
+                    },
+                    x::Event::ButtonPress(event) => {
+                        let button = match event.detail() as c_uint{
+                            x11::xlib::Button1 => MouseButton::Left,
+                            x11::xlib::Button2 => MouseButton::Middle,
+                            x11::xlib::Button3 => MouseButton::Right,
+                            _ => panic!("Unrecognized mouse button x keycode.")
+                        };
+
+                        (event_closure)(WindowEvent::Input(WindowInputEvent::MouseDown(button)));
+                    },
+                    x::Event::ButtonRelease(event) => {
+                        let button = match event.detail() as c_uint{
+                            x11::xlib::Button1 => MouseButton::Left,
+                            x11::xlib::Button2 => MouseButton::Middle,
+                            x11::xlib::Button3 => MouseButton::Right,
+                            _ => panic!("Unrecognized mouse button x keycode.")
+                        };
+
+                        (event_closure)(WindowEvent::Input(WindowInputEvent::MouseUp(button)));
+                    },
+                    x::Event::MotionNotify(event) => {
+                        let x = event.event_x();
+                        let y = event.event_x();
+                        
+                        (event_closure)(WindowEvent::Input(WindowInputEvent::MouseMove(x, y)));
+                    },
+                    x::Event::ConfigureNotify(event) => {
+                        // Window resize. Also triggered by window move.
+
+                        let x = event.width() as u32;
+                        let y = event.height() as u32;
+
+                        if self.previous_size != (x, y) {
+                            self.previous_size = (x, y);
+
+                            (event_closure)(WindowEvent::Resize(x, y));
+                        }
+                    },
+                    x::Event::ClientMessage(event) => {
+                        if let x::ClientMessageData::Data32([atom, ..]) = event.data() {
+                            if atom == self.wm_del_window.resource_id() {
+                                (event_closure)(WindowEvent::Close);
+                            }
+                        }
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
+
+    fn raw_window_handle_linux_x(&self) -> RawWindowHandle {
+        let handle = XcbWindowHandle::new(NonZeroU32::new(self.window).unwrap());
+
+        RawWindowHandle::Xcb(handle)
+    }
+
+    fn raw_display_handle_linux_x(&self) -> RawDisplayHandle {
+        let handle = XcbDisplayHandle::new(
+            Some(NonNull::new(self.connection.get_raw_conn() as *mut c_void).unwrap()), self.screen
+        );
+
+        RawDisplayHandle::Xcb(handle)
+    }
+
+    fn translate_key_code(&self, x_keycode: x::Keycode) -> Keys {
+
+        let key_sym = unsafe {
+            x11::xlib::XkbKeycodeToKeysym(
+                self.connection.get_raw_dpy(),
+                x_keycode as x11::xlib::KeyCode,
+                0,
+                if x_keycode as u32 & x11::xlib::ShiftMask == 0 { 1 } else { 0 }
+            )
+        };
+
+        match key_sym as c_uint {
+            x11::keysym::XK_BackSpace => Keys::Backspace,
+            x11::keysym::XK_Return => Keys::Enter,
+            x11::keysym::XK_Tab => Keys::Tab,
+                //x11::keysym::XK_Shift: return keys::SHIFT,
+                //x11::keysym::XK_Control: return keys::CONTROL,
+
+            x11::keysym::XK_Pause => Keys::Pause,
+            x11::keysym::XK_Caps_Lock => Keys::Capital,
+
+            x11::keysym::XK_Escape => Keys::Escape,
+
+                // Not supported
+                // case : return keys::CONVERT,
+                // case : return keys::NONCONVERT,
+                // case : return keys::ACCEPT,
+
+            x11::keysym::XK_Mode_switch => Keys::Modechange,
+
+            x11::keysym::XK_space => Keys::Space,
+            x11::keysym::XK_Prior => Keys::Prior,
+            x11::keysym::XK_Next => Keys::Next,
+            x11::keysym::XK_End => Keys::End,
+            x11::keysym::XK_Home => Keys::Home,
+            x11::keysym::XK_Left => Keys::Left,
+            x11::keysym::XK_Up => Keys::Up,
+            x11::keysym::XK_Right => Keys::Right,
+            x11::keysym::XK_Down => Keys::Down,
+            x11::keysym::XK_Select => Keys::Select,
+            x11::keysym::XK_Print => Keys::Print,
+            x11::keysym::XK_Execute => Keys::Execute,
+            // x11::keysym::XK_snapshot: return keys::SNAPSHOT, // not supported
+            x11::keysym::XK_Insert => Keys::Insert,
+            x11::keysym::XK_Delete => Keys::Delete,
+            x11::keysym::XK_Help => Keys::Help,
+
+            x11::keysym::XK_Meta_L => Keys::LWin,  // TODO: not sure this is right
+            x11::keysym::XK_Meta_R => Keys::RWin,
+                // x11::keysym::XK_apps: return keys::APPS, // not supported
+
+                // x11::keysym::XK_sleep: return keys::SLEEP, //not supported
+
+            x11::keysym::XK_KP_0 => Keys::Numpad0,
+            x11::keysym::XK_KP_1 => Keys::Numpad1,
+            x11::keysym::XK_KP_2 => Keys::Numpad2,
+            x11::keysym::XK_KP_3 => Keys::Numpad3,
+            x11::keysym::XK_KP_4 => Keys::Numpad4,
+            x11::keysym::XK_KP_5 => Keys::Numpad5,
+            x11::keysym::XK_KP_6 => Keys::Numpad6,
+            x11::keysym::XK_KP_7 => Keys::Numpad7,
+            x11::keysym::XK_KP_8 => Keys::Numpad8,
+            x11::keysym::XK_KP_9 => Keys::Numpad9,
+            x11::keysym::XK_multiply => Keys::Multiply,
+            x11::keysym::XK_KP_Add => Keys::Add,
+            x11::keysym::XK_KP_Separator => Keys::Separator,
+            x11::keysym::XK_KP_Subtract => Keys::Subtract,
+            x11::keysym::XK_KP_Decimal => Keys::Decimal,
+            x11::keysym::XK_KP_Divide => Keys::Divide,
+            x11::keysym::XK_F1 => Keys::F1,
+            x11::keysym::XK_F2 => Keys::F2,
+            x11::keysym::XK_F3 => Keys::F3,
+            x11::keysym::XK_F4 => Keys::F4,
+            x11::keysym::XK_F5 => Keys::F5,
+            x11::keysym::XK_F6 => Keys::F6,
+            x11::keysym::XK_F7 => Keys::F7,
+            x11::keysym::XK_F8 => Keys::F8,
+            x11::keysym::XK_F9 => Keys::F9,
+            x11::keysym::XK_F10 => Keys::F10,
+            x11::keysym::XK_F11 => Keys::F11,
+            x11::keysym::XK_F12 => Keys::F12,
+            x11::keysym::XK_F13 => Keys::F13,
+            x11::keysym::XK_F14 => Keys::F14,
+            x11::keysym::XK_F15 => Keys::F15,
+            x11::keysym::XK_F16 => Keys::F16,
+            x11::keysym::XK_F17 => Keys::F17,
+            x11::keysym::XK_F18 => Keys::F18,
+            x11::keysym::XK_F19 => Keys::F19,
+            x11::keysym::XK_F20 => Keys::F20,
+            x11::keysym::XK_F21 => Keys::F21,
+            x11::keysym::XK_F22 => Keys::F22,
+            x11::keysym::XK_F23 => Keys::F23,
+            x11::keysym::XK_F24 => Keys::F24,
+
+            x11::keysym::XK_Num_Lock => Keys::Numlock,
+            x11::keysym::XK_Scroll_Lock => Keys::Scroll,
+
+            x11::keysym::XK_KP_Equal => Keys::NumpadEqual,
+
+            x11::keysym::XK_Shift_L => Keys::LShift,
+            x11::keysym::XK_Shift_R => Keys::RShift,
+            x11::keysym::XK_Control_L => Keys::LControl,
+            x11::keysym::XK_Control_R => Keys::RControl,
+            // x11::keysym::XK_Menu: return keys::LMENU,
+            x11::keysym::XK_Menu => Keys::RMenu,
+
+            x11::keysym::XK_semicolon => Keys::Semicolon,
+            x11::keysym::XK_plus => Keys::Plus,
+            x11::keysym::XK_comma => Keys::Comma,
+            x11::keysym::XK_minus => Keys::Minus,
+            x11::keysym::XK_period => Keys::Period,
+            x11::keysym::XK_slash => Keys::Slash,
+            x11::keysym::XK_grave => Keys::Grave,
+
+            x11::keysym::XK_a | x11::keysym::XK_A => Keys::A,
+            x11::keysym::XK_b | x11::keysym::XK_B => Keys::B,
+            x11::keysym::XK_c | x11::keysym::XK_C => Keys::C,
+            x11::keysym::XK_d | x11::keysym::XK_D => Keys::D,
+            x11::keysym::XK_e | x11::keysym::XK_E => Keys::E,
+            x11::keysym::XK_f | x11::keysym::XK_F => Keys::F,
+            x11::keysym::XK_g | x11::keysym::XK_G => Keys::G,
+            x11::keysym::XK_h | x11::keysym::XK_H => Keys::H,
+            x11::keysym::XK_i | x11::keysym::XK_I => Keys::I,
+            x11::keysym::XK_j | x11::keysym::XK_J => Keys::J,
+            x11::keysym::XK_k | x11::keysym::XK_K => Keys::K,
+            x11::keysym::XK_l | x11::keysym::XK_L => Keys::L,
+            x11::keysym::XK_m | x11::keysym::XK_M => Keys::M,
+            x11::keysym::XK_n | x11::keysym::XK_N => Keys::N,
+            x11::keysym::XK_o | x11::keysym::XK_O => Keys::O,
+            x11::keysym::XK_p | x11::keysym::XK_P => Keys::P,
+            x11::keysym::XK_q | x11::keysym::XK_Q => Keys::Q,
+            x11::keysym::XK_r | x11::keysym::XK_R => Keys::R,
+            x11::keysym::XK_s | x11::keysym::XK_S => Keys::S,
+            x11::keysym::XK_t | x11::keysym::XK_T => Keys::T,
+            x11::keysym::XK_u | x11::keysym::XK_U => Keys::U,
+            x11::keysym::XK_v | x11::keysym::XK_V => Keys::V,
+            x11::keysym::XK_w | x11::keysym::XK_W => Keys::W,
+            x11::keysym::XK_x | x11::keysym::XK_X => Keys::X,
+            x11::keysym::XK_y | x11::keysym::XK_Y => Keys::Y,
+            x11::keysym::XK_z | x11::keysym::XK_Z => Keys::Z,
+            _ => panic!("Unknown x keycode. Got: {}", x_keycode)
+        }
+    }
+}
+
 
 #[cfg(target_os = "windows")]
 impl Window {
@@ -310,6 +647,10 @@ impl Window {
 
     fn raw_display_handle_windows(&self) -> RawDisplayHandle {
         RawDisplayHandle::Windows(WindowsDisplayHandle::new())
+    }
+
+    fn wide_null(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
     }
 }
 
