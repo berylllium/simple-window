@@ -15,7 +15,7 @@ use xcb::{x, Xid};
 use raw_window_handle::{Win32WindowHandle, WindowsDisplayHandle};
 
 #[cfg(target_os = "windows")]
-use std::{mem::MaybeUninit, num::NonZeroIsize};
+use std::{mem::MaybeUninit, num::NonZeroIsize, ptr};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
@@ -27,7 +27,7 @@ use windows_sys::Win32::{
         RegisterClassW, WNDCLASSW, MSG,
         CS_DBLCLKS, IDC_ARROW, IDI_APPLICATION, MB_ICONEXCLAMATION, MB_OK, SW_SHOW, SW_SHOWNOACTIVATE, 
         WS_CAPTION, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME,
-        WM_DESTROY, PM_REMOVE, WM_CLOSE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWjN, WM_KEYUP, WM_LBUTTONDOWN,
+        WM_DESTROY, PM_REMOVE, WM_CLOSE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
         WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
         WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER
     },
