@@ -49,7 +49,7 @@ checksum = "8cc3bcbdb1ddfc11e700e62968e6b4cc9c75bb466464ad28fb61c5b2c964418b"
 
 [[package]]
 name = "simple-window"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "log",
  "raw-window-handle",

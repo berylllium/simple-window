@@ -375,8 +375,8 @@ impl Window {
             x11::keysym::XK_Delete => Keys::Delete,
             x11::keysym::XK_Help => Keys::Help,
 
-            x11::keysym::XK_Meta_L => Keys::LWin,  // TODO: not sure this is right
-            x11::keysym::XK_Meta_R => Keys::RWin,
+            x11::keysym::XK_Super_L => Keys::LWin,
+            x11::keysym::XK_Super_R => Keys::RWin,
                 // x11::keysym::XK_apps: return keys::APPS, // not supported
 
                 // x11::keysym::XK_sleep: return keys::SLEEP, //not supported
