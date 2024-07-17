@@ -256,12 +256,14 @@ impl Window {
         while let Some(event) = self.connection.poll_for_event().unwrap() {
             if let xcb::Event::X(event) = event { match event {
                     x::Event::KeyPress(event) => {
-                        let key = self.translate_key_code(event.detail());
-                        (event_closure)(WindowEvent::Input(WindowInputEvent::KeyDown(key)));
+                        if let Some(key) = self.translate_key_code(event.detail()) {
+                            (event_closure)(WindowEvent::Input(WindowInputEvent::KeyDown(key)));
+                        }
                     },
                     x::Event::KeyRelease(event) => {
-                        let key = self.translate_key_code(event.detail());
-                        (event_closure)(WindowEvent::Input(WindowInputEvent::KeyUp(key)));
+                        if let Some(key) = self.translate_key_code(event.detail()) {
+                            (event_closure)(WindowEvent::Input(WindowInputEvent::KeyUp(key)));
+                        }
                     },
                     x::Event::ButtonPress(event) => {
                         let button = match event.detail() as c_uint {
@@ -270,7 +272,7 @@ impl Window {
                             x11::xlib::Button3 => MouseButton::Right,
                             x11::xlib::Button4 => continue,
                             x11::xlib::Button5 => continue,
-                            _ => panic!("Unrecognized mouse button x keycode.")
+                            _ => { log::warn!("Unrecognized mouse button pressed: {}.", event.detail()); continue; },
                         };
 
                         (event_closure)(WindowEvent::Input(WindowInputEvent::MouseDown(button)));
@@ -296,7 +298,7 @@ impl Window {
 
                                 (event_closure)(WindowEvent::Input(WindowInputEvent::MouseWheelMove(d)));
                             },
-                            _ => panic!("Unrecognized mouse button x keycode.")
+                            _ => { log::warn!("Unrecognized mouse button released: {}.", event.detail()); continue; },
                         };
                     },
                     x::Event::MotionNotify(event) => {
@@ -344,7 +346,7 @@ impl Window {
         RawDisplayHandle::Xcb(handle)
     }
 
-    fn translate_key_code(&self, x_keycode: x::Keycode) -> Keys {
+    fn translate_key_code(&self, x_keycode: x::Keycode) -> Option<Keys> {
 
         let key_sym = unsafe {
             x11::xlib::XkbKeycodeToKeysym(
@@ -356,135 +358,135 @@ impl Window {
         };
 
         match key_sym as c_uint {
-            x11::keysym::XK_BackSpace => Keys::Backspace,
-            x11::keysym::XK_Return => Keys::Enter,
-            x11::keysym::XK_Tab => Keys::Tab,
-                //x11::keysym::XK_Shift: return keys::SHIFT,
-                //x11::keysym::XK_Control: return keys::CONTROL,
+            x11::keysym::XK_BackSpace => Some(Keys::Backspace),
+            x11::keysym::XK_Return => Some(Keys::Enter),
+            x11::keysym::XK_Tab => Some(Keys::Tab),
+                //x11::keysym::XK_Shift: return keys::SHIFT),
+                //x11::keysym::XK_Control: return keys::CONTROL),
 
-            x11::keysym::XK_Pause => Keys::Pause,
-            x11::keysym::XK_Caps_Lock => Keys::Capital,
+            x11::keysym::XK_Pause => Some(Keys::Pause),
+            x11::keysym::XK_Caps_Lock => Some(Keys::Capital),
 
-            x11::keysym::XK_Escape => Keys::Escape,
+            x11::keysym::XK_Escape => Some(Keys::Escape),
 
                 // Not supported
-                // case : return keys::CONVERT,
-                // case : return keys::NONCONVERT,
-                // case : return keys::ACCEPT,
+                // case : return keys::CONVERT),
+                // case : return keys::NONCONVERT),
+                // case : return keys::ACCEPT),
 
-            x11::keysym::XK_Mode_switch => Keys::Modechange,
+            x11::keysym::XK_Mode_switch => Some(Keys::Modechange),
 
-            x11::keysym::XK_space => Keys::Space,
-            x11::keysym::XK_Prior => Keys::Prior,
-            x11::keysym::XK_Next => Keys::Next,
-            x11::keysym::XK_End => Keys::End,
-            x11::keysym::XK_Home => Keys::Home,
-            x11::keysym::XK_Left => Keys::Left,
-            x11::keysym::XK_Up => Keys::Up,
-            x11::keysym::XK_Right => Keys::Right,
-            x11::keysym::XK_Down => Keys::Down,
-            x11::keysym::XK_Select => Keys::Select,
-            x11::keysym::XK_Print => Keys::Print,
-            x11::keysym::XK_Execute => Keys::Execute,
-            // x11::keysym::XK_snapshot: return keys::SNAPSHOT, // not supported
-            x11::keysym::XK_Insert => Keys::Insert,
-            x11::keysym::XK_Delete => Keys::Delete,
-            x11::keysym::XK_Help => Keys::Help,
+            x11::keysym::XK_space => Some(Keys::Space),
+            x11::keysym::XK_Prior => Some(Keys::Prior),
+            x11::keysym::XK_Next => Some(Keys::Next),
+            x11::keysym::XK_End => Some(Keys::End),
+            x11::keysym::XK_Home => Some(Keys::Home),
+            x11::keysym::XK_Left => Some(Keys::Left),
+            x11::keysym::XK_Up => Some(Keys::Up),
+            x11::keysym::XK_Right => Some(Keys::Right),
+            x11::keysym::XK_Down => Some(Keys::Down),
+            x11::keysym::XK_Select => Some(Keys::Select),
+            x11::keysym::XK_Print => Some(Keys::Print),
+            x11::keysym::XK_Execute => Some(Keys::Execute),
+            // x11::keysym::XK_snapshot: return keys::SNAPSHOT), // not supported
+            x11::keysym::XK_Insert => Some(Keys::Insert),
+            x11::keysym::XK_Delete => Some(Keys::Delete),
+            x11::keysym::XK_Help => Some(Keys::Help),
 
-            x11::keysym::XK_Super_L => Keys::LWin,
-            x11::keysym::XK_Super_R => Keys::RWin,
-                // x11::keysym::XK_apps: return keys::APPS, // not supported
+            x11::keysym::XK_Super_L => Some(Keys::LWin),
+            x11::keysym::XK_Super_R => Some(Keys::RWin),
+                // x11::keysym::XK_apps: return keys::APPS), // not supported
 
-                // x11::keysym::XK_sleep: return keys::SLEEP, //not supported
+                // x11::keysym::XK_sleep: return keys::SLEEP), //not supported
 
-            x11::keysym::XK_KP_0 => Keys::Numpad0,
-            x11::keysym::XK_KP_1 => Keys::Numpad1,
-            x11::keysym::XK_KP_2 => Keys::Numpad2,
-            x11::keysym::XK_KP_3 => Keys::Numpad3,
-            x11::keysym::XK_KP_4 => Keys::Numpad4,
-            x11::keysym::XK_KP_5 => Keys::Numpad5,
-            x11::keysym::XK_KP_6 => Keys::Numpad6,
-            x11::keysym::XK_KP_7 => Keys::Numpad7,
-            x11::keysym::XK_KP_8 => Keys::Numpad8,
-            x11::keysym::XK_KP_9 => Keys::Numpad9,
-            x11::keysym::XK_multiply => Keys::Multiply,
-            x11::keysym::XK_KP_Add => Keys::Add,
-            x11::keysym::XK_KP_Separator => Keys::Separator,
-            x11::keysym::XK_KP_Subtract => Keys::Subtract,
-            x11::keysym::XK_KP_Decimal => Keys::Decimal,
-            x11::keysym::XK_KP_Divide => Keys::Divide,
-            x11::keysym::XK_F1 => Keys::F1,
-            x11::keysym::XK_F2 => Keys::F2,
-            x11::keysym::XK_F3 => Keys::F3,
-            x11::keysym::XK_F4 => Keys::F4,
-            x11::keysym::XK_F5 => Keys::F5,
-            x11::keysym::XK_F6 => Keys::F6,
-            x11::keysym::XK_F7 => Keys::F7,
-            x11::keysym::XK_F8 => Keys::F8,
-            x11::keysym::XK_F9 => Keys::F9,
-            x11::keysym::XK_F10 => Keys::F10,
-            x11::keysym::XK_F11 => Keys::F11,
-            x11::keysym::XK_F12 => Keys::F12,
-            x11::keysym::XK_F13 => Keys::F13,
-            x11::keysym::XK_F14 => Keys::F14,
-            x11::keysym::XK_F15 => Keys::F15,
-            x11::keysym::XK_F16 => Keys::F16,
-            x11::keysym::XK_F17 => Keys::F17,
-            x11::keysym::XK_F18 => Keys::F18,
-            x11::keysym::XK_F19 => Keys::F19,
-            x11::keysym::XK_F20 => Keys::F20,
-            x11::keysym::XK_F21 => Keys::F21,
-            x11::keysym::XK_F22 => Keys::F22,
-            x11::keysym::XK_F23 => Keys::F23,
-            x11::keysym::XK_F24 => Keys::F24,
+            x11::keysym::XK_KP_0 => Some(Keys::Numpad0),
+            x11::keysym::XK_KP_1 => Some(Keys::Numpad1),
+            x11::keysym::XK_KP_2 => Some(Keys::Numpad2),
+            x11::keysym::XK_KP_3 => Some(Keys::Numpad3),
+            x11::keysym::XK_KP_4 => Some(Keys::Numpad4),
+            x11::keysym::XK_KP_5 => Some(Keys::Numpad5),
+            x11::keysym::XK_KP_6 => Some(Keys::Numpad6),
+            x11::keysym::XK_KP_7 => Some(Keys::Numpad7),
+            x11::keysym::XK_KP_8 => Some(Keys::Numpad8),
+            x11::keysym::XK_KP_9 => Some(Keys::Numpad9),
+            x11::keysym::XK_multiply => Some(Keys::Multiply),
+            x11::keysym::XK_KP_Add => Some(Keys::Add),
+            x11::keysym::XK_KP_Separator => Some(Keys::Separator),
+            x11::keysym::XK_KP_Subtract => Some(Keys::Subtract),
+            x11::keysym::XK_KP_Decimal => Some(Keys::Decimal),
+            x11::keysym::XK_KP_Divide => Some(Keys::Divide),
+            x11::keysym::XK_F1 => Some(Keys::F1),
+            x11::keysym::XK_F2 => Some(Keys::F2),
+            x11::keysym::XK_F3 => Some(Keys::F3),
+            x11::keysym::XK_F4 => Some(Keys::F4),
+            x11::keysym::XK_F5 => Some(Keys::F5),
+            x11::keysym::XK_F6 => Some(Keys::F6),
+            x11::keysym::XK_F7 => Some(Keys::F7),
+            x11::keysym::XK_F8 => Some(Keys::F8),
+            x11::keysym::XK_F9 => Some(Keys::F9),
+            x11::keysym::XK_F10 => Some(Keys::F10),
+            x11::keysym::XK_F11 => Some(Keys::F11),
+            x11::keysym::XK_F12 => Some(Keys::F12),
+            x11::keysym::XK_F13 => Some(Keys::F13),
+            x11::keysym::XK_F14 => Some(Keys::F14),
+            x11::keysym::XK_F15 => Some(Keys::F15),
+            x11::keysym::XK_F16 => Some(Keys::F16),
+            x11::keysym::XK_F17 => Some(Keys::F17),
+            x11::keysym::XK_F18 => Some(Keys::F18),
+            x11::keysym::XK_F19 => Some(Keys::F19),
+            x11::keysym::XK_F20 => Some(Keys::F20),
+            x11::keysym::XK_F21 => Some(Keys::F21),
+            x11::keysym::XK_F22 => Some(Keys::F22),
+            x11::keysym::XK_F23 => Some(Keys::F23),
+            x11::keysym::XK_F24 => Some(Keys::F24),
 
-            x11::keysym::XK_Num_Lock => Keys::Numlock,
-            x11::keysym::XK_Scroll_Lock => Keys::Scroll,
+            x11::keysym::XK_Num_Lock => Some(Keys::Numlock),
+            x11::keysym::XK_Scroll_Lock => Some(Keys::Scroll),
 
-            x11::keysym::XK_KP_Equal => Keys::NumpadEqual,
+            x11::keysym::XK_KP_Equal => Some(Keys::NumpadEqual),
 
-            x11::keysym::XK_Shift_L => Keys::LShift,
-            x11::keysym::XK_Shift_R => Keys::RShift,
-            x11::keysym::XK_Control_L => Keys::LControl,
-            x11::keysym::XK_Control_R => Keys::RControl,
-            // x11::keysym::XK_Menu: return keys::LMENU,
-            x11::keysym::XK_Menu => Keys::RMenu,
+            x11::keysym::XK_Shift_L => Some(Keys::LShift),
+            x11::keysym::XK_Shift_R => Some(Keys::RShift),
+            x11::keysym::XK_Control_L => Some(Keys::LControl),
+            x11::keysym::XK_Control_R => Some(Keys::RControl),
+            // x11::keysym::XK_Menu: return keys::LMENU),
+            x11::keysym::XK_Menu => Some(Keys::RMenu),
 
-            x11::keysym::XK_semicolon => Keys::Semicolon,
-            x11::keysym::XK_plus => Keys::Plus,
-            x11::keysym::XK_comma => Keys::Comma,
-            x11::keysym::XK_minus => Keys::Minus,
-            x11::keysym::XK_period => Keys::Period,
-            x11::keysym::XK_slash => Keys::Slash,
-            x11::keysym::XK_grave => Keys::Grave,
+            x11::keysym::XK_semicolon => Some(Keys::Semicolon),
+            x11::keysym::XK_plus => Some(Keys::Plus),
+            x11::keysym::XK_comma => Some(Keys::Comma),
+            x11::keysym::XK_minus => Some(Keys::Minus),
+            x11::keysym::XK_period => Some(Keys::Period),
+            x11::keysym::XK_slash => Some(Keys::Slash),
+            x11::keysym::XK_grave => Some(Keys::Grave),
 
-            x11::keysym::XK_a | x11::keysym::XK_A => Keys::A,
-            x11::keysym::XK_b | x11::keysym::XK_B => Keys::B,
-            x11::keysym::XK_c | x11::keysym::XK_C => Keys::C,
-            x11::keysym::XK_d | x11::keysym::XK_D => Keys::D,
-            x11::keysym::XK_e | x11::keysym::XK_E => Keys::E,
-            x11::keysym::XK_f | x11::keysym::XK_F => Keys::F,
-            x11::keysym::XK_g | x11::keysym::XK_G => Keys::G,
-            x11::keysym::XK_h | x11::keysym::XK_H => Keys::H,
-            x11::keysym::XK_i | x11::keysym::XK_I => Keys::I,
-            x11::keysym::XK_j | x11::keysym::XK_J => Keys::J,
-            x11::keysym::XK_k | x11::keysym::XK_K => Keys::K,
-            x11::keysym::XK_l | x11::keysym::XK_L => Keys::L,
-            x11::keysym::XK_m | x11::keysym::XK_M => Keys::M,
-            x11::keysym::XK_n | x11::keysym::XK_N => Keys::N,
-            x11::keysym::XK_o | x11::keysym::XK_O => Keys::O,
-            x11::keysym::XK_p | x11::keysym::XK_P => Keys::P,
-            x11::keysym::XK_q | x11::keysym::XK_Q => Keys::Q,
-            x11::keysym::XK_r | x11::keysym::XK_R => Keys::R,
-            x11::keysym::XK_s | x11::keysym::XK_S => Keys::S,
-            x11::keysym::XK_t | x11::keysym::XK_T => Keys::T,
-            x11::keysym::XK_u | x11::keysym::XK_U => Keys::U,
-            x11::keysym::XK_v | x11::keysym::XK_V => Keys::V,
-            x11::keysym::XK_w | x11::keysym::XK_W => Keys::W,
-            x11::keysym::XK_x | x11::keysym::XK_X => Keys::X,
-            x11::keysym::XK_y | x11::keysym::XK_Y => Keys::Y,
-            x11::keysym::XK_z | x11::keysym::XK_Z => Keys::Z,
-            _ => panic!("Unknown x keycode. Got: {}", x_keycode)
+            x11::keysym::XK_a | x11::keysym::XK_A => Some(Keys::A),
+            x11::keysym::XK_b | x11::keysym::XK_B => Some(Keys::B),
+            x11::keysym::XK_c | x11::keysym::XK_C => Some(Keys::C),
+            x11::keysym::XK_d | x11::keysym::XK_D => Some(Keys::D),
+            x11::keysym::XK_e | x11::keysym::XK_E => Some(Keys::E),
+            x11::keysym::XK_f | x11::keysym::XK_F => Some(Keys::F),
+            x11::keysym::XK_g | x11::keysym::XK_G => Some(Keys::G),
+            x11::keysym::XK_h | x11::keysym::XK_H => Some(Keys::H),
+            x11::keysym::XK_i | x11::keysym::XK_I => Some(Keys::I),
+            x11::keysym::XK_j | x11::keysym::XK_J => Some(Keys::J),
+            x11::keysym::XK_k | x11::keysym::XK_K => Some(Keys::K),
+            x11::keysym::XK_l | x11::keysym::XK_L => Some(Keys::L),
+            x11::keysym::XK_m | x11::keysym::XK_M => Some(Keys::M),
+            x11::keysym::XK_n | x11::keysym::XK_N => Some(Keys::N),
+            x11::keysym::XK_o | x11::keysym::XK_O => Some(Keys::O),
+            x11::keysym::XK_p | x11::keysym::XK_P => Some(Keys::P),
+            x11::keysym::XK_q | x11::keysym::XK_Q => Some(Keys::Q),
+            x11::keysym::XK_r | x11::keysym::XK_R => Some(Keys::R),
+            x11::keysym::XK_s | x11::keysym::XK_S => Some(Keys::S),
+            x11::keysym::XK_t | x11::keysym::XK_T => Some(Keys::T),
+            x11::keysym::XK_u | x11::keysym::XK_U => Some(Keys::U),
+            x11::keysym::XK_v | x11::keysym::XK_V => Some(Keys::V),
+            x11::keysym::XK_w | x11::keysym::XK_W => Some(Keys::W),
+            x11::keysym::XK_x | x11::keysym::XK_X => Some(Keys::X),
+            x11::keysym::XK_y | x11::keysym::XK_Y => Some(Keys::Y),
+            x11::keysym::XK_z | x11::keysym::XK_Z => Some(Keys::Z),
+            _ => { log::warn!("Unrecognized x keysym: {}", key_sym); None }
         }
     }
 }
