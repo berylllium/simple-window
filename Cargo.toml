@@ -2,7 +2,7 @@
 name = "simple-window"
 description = "A simple, cross-platform window creation library."
 repository = "https://github.com/berylllium/simple-window"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "LGPL-3.0-only"
 exclude = [
