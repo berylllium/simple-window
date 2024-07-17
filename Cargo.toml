@@ -1,6 +1,6 @@
 [package]
 name = "simple-window"
-description = "A simple, cross-platform windowing library."
+description = "A simple, cross-platform window creation library."
 repository = "https://github.com/berylllium/simple-window"
 version = "0.2.2"
 edition = "2021"

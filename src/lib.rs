@@ -264,24 +264,40 @@ impl Window {
                         (event_closure)(WindowEvent::Input(WindowInputEvent::KeyUp(key)));
                     },
                     x::Event::ButtonPress(event) => {
-                        let button = match event.detail() as c_uint{
+                        let button = match event.detail() as c_uint {
                             x11::xlib::Button1 => MouseButton::Left,
                             x11::xlib::Button2 => MouseButton::Middle,
                             x11::xlib::Button3 => MouseButton::Right,
+                            x11::xlib::Button4 => continue,
+                            x11::xlib::Button5 => continue,
                             _ => panic!("Unrecognized mouse button x keycode.")
                         };
 
                         (event_closure)(WindowEvent::Input(WindowInputEvent::MouseDown(button)));
                     },
                     x::Event::ButtonRelease(event) => {
-                        let button = match event.detail() as c_uint{
-                            x11::xlib::Button1 => MouseButton::Left,
-                            x11::xlib::Button2 => MouseButton::Middle,
-                            x11::xlib::Button3 => MouseButton::Right,
+                        match event.detail() as c_uint{
+                            event @ (x11::xlib::Button1 | x11::xlib::Button2 | x11::xlib::Button3) => {
+                                let button = match event {
+                                    x11::xlib::Button1 => MouseButton::Left,
+                                    x11::xlib::Button2 => MouseButton::Middle,
+                                    x11::xlib::Button3 => MouseButton::Right,
+                                    _ => panic!("Unrecognized mouse button x keycode.")
+                                };
+
+                                (event_closure)(WindowEvent::Input(WindowInputEvent::MouseUp(button)));
+                            },
+                            event @ (x11::xlib::Button4 | x11::xlib::Button5) => {
+                                let d = match event {
+                                    x11::xlib::Button4 => 1i16,
+                                    x11::xlib::Button5 => -1i16,
+                                    _ => panic!("Unrecognized mouse button x keycode.")
+                                };
+
+                                (event_closure)(WindowEvent::Input(WindowInputEvent::MouseWheelMove(d)));
+                            },
                             _ => panic!("Unrecognized mouse button x keycode.")
                         };
-
-                        (event_closure)(WindowEvent::Input(WindowInputEvent::MouseUp(button)));
                     },
                     x::Event::MotionNotify(event) => {
                         let x = event.event_x();
